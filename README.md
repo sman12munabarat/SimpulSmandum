@@ -9,8 +9,6 @@ Aplikasi ini menggunakan **Arsitektur Standalone Modern** berbasis **Supabase (P
 ## 🌟 Fitur Utama
 1. **Multi-Role User**: Administrator, Guru, dan Ruang Siswa (Web & Mobile PWA).
 2. **Backup, Restore & Ganti Data Per-Semester (Panel Admin ➔ Pengaturan)**:
-   - **Download Backup Seluruh Data (`.json`)**: Menyimpan seluruh 15 tabel database Supabase beserta Ruang Belajar, Tugas, Diskusi, Galeri, dan SPMB untuk arsip per-semester.
-   - **Upload & Ganti Data Per-Semester**: Memulihkan atau mengganti seluruh data aplikasi dengan file backup semester yang dipilih.
    - **Download Backup Seluruh Data (`.backup`)**: Menyimpan seluruh 15 tabel database Supabase dalam format PostgreSQL Cluster Dump (`db_cluster-DD-MM-YYYY@HH-MM-SS.backup`) beserta Ruang Belajar, Tugas, Diskusi, Galeri, dan SPMB untuk arsip per-semester.
    - **Upload & Ganti Data Per-Semester**: Memulihkan atau mengganti seluruh data aplikasi dengan file `.backup` semester yang dipilih ke database Supabase terbaru.
    - **Arsipkan & Mulai Semester Baru**: Mengosongkan data transaksi semester lama (Absensi, Ujian, Nilai, Ruang Belajar) dengan tetap mempertahankan Data Master (Guru, Kelas, Siswa, Mapel, Identitas Sekolah).
