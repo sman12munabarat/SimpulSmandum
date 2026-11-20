@@ -15564,16 +15564,21 @@
                     '<span><i class="fas fa-file-code" style="color:#0ea5e9"></i> Konfigurasi Database Supabase &amp; File <code>config.js</code> Terbaru</span>' +
                     '<span class="badge badge-info" style="font-size:11px"><i class="fas fa-bolt"></i> Terhubung ke config.js</span>' +
                     '</div>' +
-                    '<p style="font-size:12px;color:var(--text2);margin-bottom:12px">Kelola URL dan Anon Key database Supabase Anda. Jika Anda membuat project Supabase baru untuk semester baru, Anda dapat mengganti kredensial di bawah ini dan langsung mengunduh file <code>config.js</code> terbaru.</p>' +
+                    '<p style="font-size:12px;color:var(--text2);margin-bottom:12px">Kelola URL, Anon/Publishable Key, dan Secret Key database Supabase baru Anda. Pastikan <code>schema.sql</code> sudah dijalankan di SQL Editor Supabase baru, lalu klik <b>Simpan &amp; Sinkronkan Data ke Supabase Baru</b>.</p>' +
                     '<div class="form-row">' +
                     '<div class="form-group"><label><i class="fas fa-server"></i> Supabase Project URL</label><input class="form-control" id="stSupabaseUrl" value="' + esc(sbCfg.SUPABASE_URL) + '" placeholder="https://xyz.supabase.co"/></div>' +
-                    '<div class="form-group"><label><i class="fas fa-key"></i> Supabase Anon Public Key</label><input class="form-control" id="stSupabaseAnonKey" value="' + esc(sbCfg.SUPABASE_ANON_KEY) + '" placeholder="sb_publishable_... atau eyJhbGci..."/></div>' +
+                    '<div class="form-group"><label><i class="fas fa-key"></i> Supabase Anon / Publishable Key</label><input class="form-control" id="stSupabaseAnonKey" value="' + esc(sbCfg.SUPABASE_ANON_KEY) + '" placeholder="sb_publishable_... atau eyJhbGci..."/></div>' +
+                    '</div>' +
+                    '<div class="form-row">' +
+                    '<div class="form-group"><label><i class="fas fa-user-secret"></i> Supabase Secret Key (Opsional - Untuk Upload Backup Penuh)</label><input class="form-control" id="stSupabaseSecretKey" value="' + esc(sbCfg.SUPABASE_SECRET_KEY || sbCfg.SUPABASE_ANON_KEY || '') + '" placeholder="sb_secret_..."/></div>' +
                     '</div>' +
                     '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
                     '<button type="button" class="btn btn-primary btn-sm" onclick="applyRuntimeSupabaseConfig()"><i class="fas fa-sync"></i> Terapkan Koneksi Database</button>' +
+                    '<button type="button" class="btn btn-primary btn-sm" style="background:linear-gradient(135deg,#059669,#10b981);border:none" onclick="syncCurrentDatabaseToSupabaseFromSettings()"><i class="fas fa-cloud-upload-alt"></i> Simpan &amp; Sinkronkan Data ke Supabase Baru</button>' +
                     '<button type="button" class="btn btn-outline btn-sm" onclick="downloadGeneratedConfigJs()"><i class="fas fa-download" style="color:#10b981"></i> Download File config.js Terbaru</button>' +
                     '<button type="button" class="btn btn-outline btn-sm" onclick="copyGeneratedConfigJs()"><i class="fas fa-copy" style="color:#38bdf8"></i> Salin Kode config.js</button>' +
                     '</div>' +
+                    '<div id="stSupabaseSyncStatus" style="display:none;margin-top:10px;padding:10px;border-radius:8px;font-size:12px"></div>' +
                     '</div>' +
 
                     // ── 4. PROFIL & ALAMAT ADMINISTRATOR ──
@@ -15873,13 +15878,15 @@
                         hideWaiting();
                         if (res && res.success) {
                             var sum = res.summary || {};
+                            var isRemoteOk = Number(res.remoteSyncedTables || 0) > 0;
+                            var statusHtml = '<div style="font-weight:700;color:' + (isRemoteOk ? '#10b981' : '#f59e0b') + ';margin-bottom:4px"><i class="fas ' + (isRemoteOk ? 'fa-check-circle' : 'fa-exclamation-triangle') + '"></i> ' + esc(res.message) + '</div>' +
+                                '<div style="font-size:11.5px;color:var(--text2)">Data Aktif Saat Ini: <b>' + (sum.Users || 0) + '</b> Guru/Admin &bull; <b>' + (sum.Classes || 0) + '</b> Kelas &bull; <b>' + (sum.Students || 0) + '</b> Siswa &bull; <b>' + (sum.Subjects || 0) + '</b> Mapel/Jadwal &bull; <b>' + (sum.Attendance || 0) + '</b> Absensi &bull; <b>' + (sum.Exams || 0) + '</b> Ujian &bull; <b>' + (sum.Questions || 0) + '</b> Soal &bull; <b>' + (sum.Grades || 0) + '</b> Nilai &bull; <b>' + (sum.Learnings || 0) + '</b> Ruang Belajar.</div>';
                             if (statusBox) {
-                                statusBox.style.background = 'rgba(16,185,129,0.12)';
-                                statusBox.style.borderColor = 'rgba(16,185,129,0.4)';
-                                statusBox.innerHTML = '<div style="font-weight:700;color:#10b981;margin-bottom:4px"><i class="fas fa-check-circle"></i> ' + esc(res.message) + '</div>' +
-                                    '<div style="font-size:11.5px;color:var(--text2)">Data Aktif Saat Ini: <b>' + (sum.Users || 0) + '</b> Guru/Admin &bull; <b>' + (sum.Classes || 0) + '</b> Kelas &bull; <b>' + (sum.Students || 0) + '</b> Siswa &bull; <b>' + (sum.Subjects || 0) + '</b> Mapel/Jadwal &bull; <b>' + (sum.Attendance || 0) + '</b> Absensi &bull; <b>' + (sum.Exams || 0) + '</b> Ujian &bull; <b>' + (sum.Questions || 0) + '</b> Soal &bull; <b>' + (sum.Grades || 0) + '</b> Nilai &bull; <b>' + (sum.Learnings || 0) + '</b> Ruang Belajar.</div>';
+                                statusBox.style.background = isRemoteOk ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)';
+                                statusBox.style.borderColor = isRemoteOk ? 'rgba(16,185,129,0.4)' : 'rgba(245,158,11,0.4)';
+                                statusBox.innerHTML = statusHtml;
                             }
-                            showToast(res.message || 'Data file .backup semester berhasil diterapkan!', 'success');
+                            showToast(res.message || 'Data file .backup semester berhasil diterapkan!', isRemoteOk ? 'success' : 'warning');
                             google.script.run.withSuccessHandler(function (sRes) {
                                 if (sRes && sRes.success) {
                                     APP.settings = sRes.data;
@@ -15888,6 +15895,15 @@
                                     try { loadLandingTeachers(); } catch (e) { }
                                     try { checkPendingUsers(); } catch (e) { }
                                     renderSettings();
+                                    setTimeout(function () {
+                                        var sb2 = document.getElementById('bkOperationStatusBox');
+                                        if (sb2) {
+                                            sb2.style.display = 'block';
+                                            sb2.style.background = isRemoteOk ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)';
+                                            sb2.style.border = '1px solid ' + (isRemoteOk ? 'rgba(16,185,129,0.4)' : 'rgba(245,158,11,0.4)');
+                                            sb2.innerHTML = statusHtml;
+                                        }
+                                    }, 150);
                                 }
                             }).getSettings();
                         } else {
@@ -16123,19 +16139,67 @@
         window.applyRuntimeSupabaseConfig = function () {
             var url = v('stSupabaseUrl');
             var key = v('stSupabaseAnonKey');
-            if (!url || !key) {
-                showToast('Masukkan Supabase Project URL dan Anon Key!', 'warning');
+            var secretKey = v('stSupabaseSecretKey') || key;
+            if (!url || (!key && !secretKey)) {
+                showToast('Masukkan Supabase Project URL dan Key!', 'warning');
                 return;
             }
             if (typeof window.resetPortalSupabaseClient === 'function') {
-                window.resetPortalSupabaseClient(url, key);
+                window.resetPortalSupabaseClient(url, key || secretKey, secretKey);
             }
-            showToast('Koneksi database Supabase berhasil diperbarui!', 'success');
+            showToast('Koneksi database Supabase baru berhasil diterapkan!', 'success');
+        };
+
+        window.syncCurrentDatabaseToSupabaseFromSettings = function () {
+            var url = v('stSupabaseUrl');
+            var key = v('stSupabaseAnonKey');
+            var secretKey = v('stSupabaseSecretKey') || key;
+            if (!url || (!key && !secretKey)) {
+                showToast('Masukkan Supabase Project URL dan Key terlebih dahulu!', 'warning');
+                return;
+            }
+            var stBox = document.getElementById('stSupabaseSyncStatus');
+            if (stBox) {
+                stBox.style.display = 'block';
+                stBox.style.background = 'rgba(56,189,248,0.12)';
+                stBox.style.border = '1px solid rgba(56,189,248,0.35)';
+                stBox.innerHTML = '<i class="fas fa-spinner fa-spin" style="color:#38bdf8"></i> Sedang menyinkronkan seluruh data aplikasi ke database Supabase baru (<b>' + esc(url) + '</b>)...';
+            }
+            showWaiting('Menyinkronkan ke Supabase Baru...', 'Mengirim seluruh tabel data aplikasi ke database Supabase');
+            google.script.run.withSuccessHandler(function (res) {
+                hideWaiting();
+                if (res && res.success) {
+                    if (stBox) {
+                        if (res.remoteSyncedTables > 0) {
+                            stBox.style.background = 'rgba(16,185,129,0.12)';
+                            stBox.style.borderColor = 'rgba(16,185,129,0.4)';
+                            stBox.innerHTML = '<i class="fas fa-check-circle" style="color:#10b981"></i> ' + esc(res.message);
+                        } else {
+                            stBox.style.background = 'rgba(245,158,11,0.12)';
+                            stBox.style.borderColor = 'rgba(245,158,11,0.4)';
+                            stBox.innerHTML = '<i class="fas fa-exclamation-triangle" style="color:#f59e0b"></i> Data tersimpan di aplikasi, namun gagal menulis ke server Supabase: <code>' + esc(res.remoteSyncNote || 'Periksa API Key / schema.sql') + '</code>';
+                        }
+                    }
+                    showToast(res.message, res.remoteSyncedTables > 0 ? 'success' : 'warning');
+                } else {
+                    var msg = (res && res.message) || 'Gagal menyinkronkan data ke Supabase baru.';
+                    if (stBox) {
+                        stBox.style.background = 'rgba(239,68,68,0.12)';
+                        stBox.style.borderColor = 'rgba(239,68,68,0.4)';
+                        stBox.innerHTML = '<i class="fas fa-times-circle" style="color:#ef4444"></i> ' + esc(msg);
+                    }
+                    showToast(msg, 'error');
+                }
+            }).withFailureHandler(function (e) {
+                hideWaiting();
+                err(e);
+            }).syncCurrentDatabaseToSupabase({ url: url, anonKey: key || secretKey, secretKey: secretKey });
         };
 
         window.downloadGeneratedConfigJs = function () {
             var url = v('stSupabaseUrl') || (window.PORTAL_CONFIG && window.PORTAL_CONFIG.SUPABASE_URL) || '';
             var key = v('stSupabaseAnonKey') || (window.PORTAL_CONFIG && window.PORTAL_CONFIG.SUPABASE_ANON_KEY) || '';
+            var secretKey = v('stSupabaseSecretKey') || (window.PORTAL_CONFIG && window.PORTAL_CONFIG.SUPABASE_SECRET_KEY) || key;
             var clName = v('stCloudinaryCloudName') || '';
             var clPreset = v('stCloudinaryUploadPreset') || '';
             var clKey = v('stCloudinaryApiKey') || '';
@@ -16144,7 +16208,7 @@
 
             if (window.PORTAL_CONFIG) {
                 if (typeof window.PORTAL_CONFIG.saveSupabaseConfig === 'function') {
-                    window.PORTAL_CONFIG.saveSupabaseConfig({ SUPABASE_URL: url, SUPABASE_ANON_KEY: key });
+                    window.PORTAL_CONFIG.saveSupabaseConfig({ SUPABASE_URL: url, SUPABASE_ANON_KEY: key, SUPABASE_SECRET_KEY: secretKey });
                 }
                 if (typeof window.PORTAL_CONFIG.saveCloudinaryConfig === 'function') {
                     window.PORTAL_CONFIG.saveCloudinaryConfig({
@@ -16159,7 +16223,7 @@
 
             var code = (window.PORTAL_CONFIG && typeof window.PORTAL_CONFIG.generateConfigJsCode === 'function')
                 ? window.PORTAL_CONFIG.generateConfigJsCode()
-                : ('window.PORTAL_CONFIG = {\n  SUPABASE_URL: "' + url + '",\n  SUPABASE_ANON_KEY: "' + key + '"\n};\n');
+                : ('window.PORTAL_CONFIG = {\n  SUPABASE_URL: "' + url + '",\n  SUPABASE_ANON_KEY: "' + key + '",\n  SUPABASE_SECRET_KEY: "' + secretKey + '"\n};\n');
 
             var blob = new Blob([code], { type: 'application/javascript;charset=utf-8' });
             var dlUrl = URL.createObjectURL(blob);
@@ -16178,6 +16242,7 @@
         window.copyGeneratedConfigJs = function () {
             var url = v('stSupabaseUrl') || (window.PORTAL_CONFIG && window.PORTAL_CONFIG.SUPABASE_URL) || '';
             var key = v('stSupabaseAnonKey') || (window.PORTAL_CONFIG && window.PORTAL_CONFIG.SUPABASE_ANON_KEY) || '';
+            var secretKey = v('stSupabaseSecretKey') || (window.PORTAL_CONFIG && window.PORTAL_CONFIG.SUPABASE_SECRET_KEY) || key;
             var clName = v('stCloudinaryCloudName') || '';
             var clPreset = v('stCloudinaryUploadPreset') || '';
             var clKey = v('stCloudinaryApiKey') || '';
@@ -16186,7 +16251,7 @@
 
             if (window.PORTAL_CONFIG) {
                 if (typeof window.PORTAL_CONFIG.saveSupabaseConfig === 'function') {
-                    window.PORTAL_CONFIG.saveSupabaseConfig({ SUPABASE_URL: url, SUPABASE_ANON_KEY: key });
+                    window.PORTAL_CONFIG.saveSupabaseConfig({ SUPABASE_URL: url, SUPABASE_ANON_KEY: key, SUPABASE_SECRET_KEY: secretKey });
                 }
                 if (typeof window.PORTAL_CONFIG.saveCloudinaryConfig === 'function') {
                     window.PORTAL_CONFIG.saveCloudinaryConfig({

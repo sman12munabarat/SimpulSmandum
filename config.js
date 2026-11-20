@@ -1,6 +1,6 @@
 // ============================================================================
 // FILE: config.js
-// DESKRIPSI: Konfigurasi Utama Database Supabase & Penyimpanan Media Cloudinary
+// DESKRIPSI: Konfigurasi Utama Database Supabase Terbaru & Penyimpanan Media Cloudinary
 //            Aplikasi Portal Sekolah (SMAN 12 Muna Barat - Simpul Smandum)
 //            Arsitektur Hemat Kuota Bandwidth Egress & Storage Supabase
 // ============================================================================
@@ -8,9 +8,18 @@
 (function () {
   'use strict';
 
-  // 1. KREDENSIAL DEFAULT SUPABASE (Dapat diubah di sini atau melalui Menu Pengaturan Admin)
-  const DEFAULT_SUPABASE_URL = 'https://jpaaidqdyarboowjusom.supabase.co';
-  const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_GjKXAsbZi1HP2kkBGMvMzg_cmyIFcu6';
+  // 1. KREDENSIAL DEFAULT SUPABASE TERBARU (Dapat diubah di sini, di supabase-config.js, atau di Menu Pengaturan Admin)
+  const DEFAULT_SUPABASE_URL = 'https://mqvvaszlutjokflihcpm.supabase.co';
+  const DEFAULT_SUPABASE_ANON_KEY = 'sb_secret_MOQDr1aIcF26IHU4mKmOZA_2Aaos7_z';
+  const DEFAULT_SUPABASE_SECRET_KEY = 'sb_secret_MOQDr1aIcF26IHU4mKmOZA_2Aaos7_z';
+
+  // Daftar URL database lama yang sudah ter-pause (otomatis dibersihkan dari cache browser)
+  const LEGACY_PAUSED_URLS = new Set([
+    'https://jpaaidqdyarboowjusom.supabase.co'
+  ]);
+  const LEGACY_PAUSED_KEYS = new Set([
+    'sb_publishable_GjKXAsbZi1HP2kkBGMvMzg_cmyIFcu6'
+  ]);
 
   // 2. KONFIGURASI DEFAULT CLOUDINARY CDN
   // Seluruh Foto, File Dokumen (PDF/PPT/Word/Excel), Audio/Voicenote, dan Video
@@ -46,7 +55,6 @@
     LearningSessions: { pk: 'ID',            category: 'transactional', label: 'Kehadiran & Tugas Ruang Belajar' }
   };
 
-  // Baca override runtime dari localStorage (jika Admin memperbarui lewat Panel Pengaturan)
   function _loadRuntimeJson(key) {
     try {
       if (typeof localStorage !== 'undefined') {
@@ -57,11 +65,36 @@
     return null;
   }
 
-  const runtimeSb = _loadRuntimeJson('portal_runtime_supabase_config') || {};
+  function _isLegacyUrl(u) {
+    const clean = String(u || '').trim().replace(/\/+$/, '');
+    return !clean || LEGACY_PAUSED_URLS.has(clean) || clean.includes('jpaaidqdyarboowjusom');
+  }
+
+  function _isLegacyKey(k) {
+    const clean = String(k || '').trim();
+    return !clean || LEGACY_PAUSED_KEYS.has(clean);
+  }
+
+  // Bersihkan otomatis konfigurasi database lama yang ter-pause dari localStorage
+  let runtimeSb = _loadRuntimeJson('portal_runtime_supabase_config') || {};
+  if (runtimeSb.SUPABASE_URL && _isLegacyUrl(runtimeSb.SUPABASE_URL)) {
+    runtimeSb = {};
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('portal_runtime_supabase_config');
+        localStorage.removeItem('portal_sb_quota_restricted_until');
+      }
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem('portal_sb_quota_restricted_until');
+      }
+    } catch (e) { }
+  }
+
   const runtimeCloud = _loadRuntimeJson('portal_cloudinary_config') || _loadRuntimeJson('portal_cloud_drive_config') || {};
 
-  const activeSupabaseUrl = (runtimeSb.SUPABASE_URL || DEFAULT_SUPABASE_URL).trim();
-  const activeSupabaseKey = (runtimeSb.SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY).trim();
+  const activeSupabaseUrl = (!_isLegacyUrl(runtimeSb.SUPABASE_URL) ? runtimeSb.SUPABASE_URL : DEFAULT_SUPABASE_URL).trim();
+  const activeSupabaseKey = (!_isLegacyKey(runtimeSb.SUPABASE_ANON_KEY) ? runtimeSb.SUPABASE_ANON_KEY : DEFAULT_SUPABASE_ANON_KEY).trim();
+  const activeSupabaseSecretKey = (runtimeSb.SUPABASE_SECRET_KEY || DEFAULT_SUPABASE_SECRET_KEY || activeSupabaseKey).trim();
 
   const activeCloudinary = {
     ENABLED: runtimeCloud.ENABLED !== undefined ? Boolean(runtimeCloud.ENABLED) : DEFAULT_CLOUDINARY_CONFIG.ENABLED,
@@ -74,9 +107,10 @@
   };
 
   window.PORTAL_CONFIG = {
-    VERSION: '2.5.0-cloudinary-semester',
+    VERSION: '2.6.0-supabase-new-cluster',
     SUPABASE_URL: activeSupabaseUrl,
     SUPABASE_ANON_KEY: activeSupabaseKey,
+    SUPABASE_SECRET_KEY: activeSupabaseSecretKey,
     CLOUDINARY: activeCloudinary,
     DATABASE_TABLES: DATABASE_TABLES,
     TABLE_NAMES: Object.keys(DATABASE_TABLES),
@@ -93,26 +127,36 @@
     },
 
     getSupabaseConfig() {
-      const saved = _loadRuntimeJson('portal_runtime_supabase_config') || {};
+      let saved = _loadRuntimeJson('portal_runtime_supabase_config') || {};
+      if (saved.SUPABASE_URL && _isLegacyUrl(saved.SUPABASE_URL)) {
+        saved = {};
+      }
+      const url = (!_isLegacyUrl(saved.SUPABASE_URL) ? saved.SUPABASE_URL : (!_isLegacyUrl(this.SUPABASE_URL) ? this.SUPABASE_URL : DEFAULT_SUPABASE_URL)).trim();
+      const anonKey = (!_isLegacyKey(saved.SUPABASE_ANON_KEY) ? saved.SUPABASE_ANON_KEY : (!_isLegacyKey(this.SUPABASE_ANON_KEY) ? this.SUPABASE_ANON_KEY : DEFAULT_SUPABASE_ANON_KEY)).trim();
+      const secretKey = (saved.SUPABASE_SECRET_KEY || this.SUPABASE_SECRET_KEY || DEFAULT_SUPABASE_SECRET_KEY || anonKey).trim();
       return {
-        SUPABASE_URL: (saved.SUPABASE_URL || this.SUPABASE_URL || DEFAULT_SUPABASE_URL).trim(),
-        SUPABASE_ANON_KEY: (saved.SUPABASE_ANON_KEY || this.SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY).trim()
+        SUPABASE_URL: url,
+        SUPABASE_ANON_KEY: anonKey,
+        SUPABASE_SECRET_KEY: secretKey
       };
     },
 
     saveSupabaseConfig(newCfg = {}) {
       const url = String(newCfg.SUPABASE_URL || newCfg.url || this.SUPABASE_URL || DEFAULT_SUPABASE_URL).trim();
       const key = String(newCfg.SUPABASE_ANON_KEY || newCfg.anonKey || this.SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY).trim();
+      const secretKey = String(newCfg.SUPABASE_SECRET_KEY || newCfg.secretKey || this.SUPABASE_SECRET_KEY || key || DEFAULT_SUPABASE_SECRET_KEY).trim();
       this.SUPABASE_URL = url;
       this.SUPABASE_ANON_KEY = key;
+      this.SUPABASE_SECRET_KEY = secretKey;
       try {
         localStorage.setItem('portal_runtime_supabase_config', JSON.stringify({
           SUPABASE_URL: url,
           SUPABASE_ANON_KEY: key,
+          SUPABASE_SECRET_KEY: secretKey,
           updatedAt: new Date().toISOString()
         }));
       } catch (e) { }
-      return { SUPABASE_URL: url, SUPABASE_ANON_KEY: key };
+      return { SUPABASE_URL: url, SUPABASE_ANON_KEY: key, SUPABASE_SECRET_KEY: secretKey };
     },
 
     getCloudinaryConfig() {
@@ -151,13 +195,14 @@
       const cl = this.getCloudinaryConfig();
       return `// ============================================================================
 // FILE: config.js
-// DESKRIPSI: Konfigurasi Database Supabase & Cloudinary CDN - Portal Sekolah
+// DESKRIPSI: Konfigurasi Database Supabase Terbaru & Cloudinary CDN - Portal Sekolah
 // Di-generate pada: ${new Date().toLocaleString('id-ID')}
 // ============================================================================
 
 window.PORTAL_CONFIG = window.PORTAL_CONFIG || {};
 window.PORTAL_CONFIG.SUPABASE_URL = '${sb.SUPABASE_URL}';
 window.PORTAL_CONFIG.SUPABASE_ANON_KEY = '${sb.SUPABASE_ANON_KEY}';
+window.PORTAL_CONFIG.SUPABASE_SECRET_KEY = '${sb.SUPABASE_SECRET_KEY || sb.SUPABASE_ANON_KEY}';
 window.PORTAL_CONFIG.CLOUDINARY = {
   ENABLED: true,
   CLOUD_NAME: '${cl.CLOUD_NAME}',

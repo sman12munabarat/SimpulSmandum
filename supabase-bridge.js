@@ -20,43 +20,89 @@
   const config = window.PORTAL_CONFIG || {};
   let rawSupabaseClient = null;
   let smartSupabaseClient = null;
+  let _activeClientFingerprint = '';
   let _quotaRestrictedUntil = 0;
+  let _quotaRestrictedFp = '';
+
+  // Bersihkan sisa circuit-breaker lama dari database jpaaidqdyarboowjusom yang ter-pause
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('portal_sb_quota_restricted_until');
+      const savedRt = localStorage.getItem('portal_runtime_supabase_config');
+      if (savedRt && savedRt.includes('jpaaidqdyarboowjusom')) {
+        localStorage.removeItem('portal_runtime_supabase_config');
+      }
+    }
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem('portal_sb_quota_restricted_until');
+    }
+  } catch (e) { }
+
+  function _getActiveSbConfig() {
+    if (typeof window !== 'undefined' && window.PORTAL_CONFIG && typeof window.PORTAL_CONFIG.getSupabaseConfig === 'function') {
+      return window.PORTAL_CONFIG.getSupabaseConfig();
+    }
+    const pc = (typeof window !== 'undefined' && window.PORTAL_CONFIG) || config || {};
+    const url = (pc.SUPABASE_URL && !String(pc.SUPABASE_URL).includes('jpaaidqdyarboowjusom'))
+      ? pc.SUPABASE_URL
+      : 'https://mqvvaszlutjokflihcpm.supabase.co';
+    const anonKey = (pc.SUPABASE_ANON_KEY && !String(pc.SUPABASE_ANON_KEY).includes('GjKXAsbZi1HP2kkBGMvMzg'))
+      ? pc.SUPABASE_ANON_KEY
+      : 'sb_secret_MOQDr1aIcF26IHU4mKmOZA_2Aaos7_z';
+    const secretKey = pc.SUPABASE_SECRET_KEY || anonKey;
+    return {
+      SUPABASE_URL: String(url).trim(),
+      SUPABASE_ANON_KEY: String(anonKey).trim(),
+      SUPABASE_SECRET_KEY: String(secretKey).trim()
+    };
+  }
+
+  function _getSbFingerprint() {
+    const c = _getActiveSbConfig();
+    return `${c.SUPABASE_URL}::${c.SUPABASE_ANON_KEY}::${c.SUPABASE_SECRET_KEY}`;
+  }
 
   function _isQuotaOrNetworkError(err) {
     if (!err) return false;
-    const msg = String(err.message || err.details || err.hint || err.code || err || '').toLowerCase();
+    const msg = String(err.message || err.details || err.hint || err.code || err.status || err || '').toLowerCase();
     return (
       msg.includes('exceed_egress_quota') ||
       msg.includes('restricted') ||
       msg.includes('violations') ||
       msg.includes('failed to fetch') ||
       msg.includes('networkerror') ||
+      msg.includes('network timeout') ||
       msg.includes('load failed') ||
+      msg.includes('unregistered api key') ||
+      msg.includes('invalid api key') ||
+      msg.includes('forbidden') ||
+      msg.includes('jwt') ||
+      msg.includes('401') ||
       msg.includes('402') ||
+      msg.includes('403') ||
       msg.includes('503') ||
       msg.includes('504')
     );
   }
 
-  function _markQuotaRestricted() {
-    _quotaRestrictedUntil = Date.now() + 10 * 60 * 1000; // Circuit breaker 10 menit
+  function _markQuotaRestricted(durationMs = 120000) {
+    _quotaRestrictedUntil = Date.now() + durationMs;
+    _quotaRestrictedFp = _getSbFingerprint();
+  }
+
+  function _clearQuotaRestricted() {
+    _quotaRestrictedUntil = 0;
+    _quotaRestrictedFp = '';
     try {
-      sessionStorage.setItem('portal_sb_quota_restricted_until', String(_quotaRestrictedUntil));
-      localStorage.setItem('portal_sb_quota_restricted_until', String(_quotaRestrictedUntil));
+      if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('portal_sb_quota_restricted_until');
+      if (typeof localStorage !== 'undefined') localStorage.removeItem('portal_sb_quota_restricted_until');
     } catch (e) { }
   }
 
   function _isQuotaRestricted() {
-    if (_quotaRestrictedUntil > Date.now()) return true;
-    try {
-      const savedSession = Number(sessionStorage.getItem('portal_sb_quota_restricted_until') || 0);
-      const savedLocal = Number(localStorage.getItem('portal_sb_quota_restricted_until') || 0);
-      const saved = Math.max(savedSession, savedLocal);
-      if (saved > Date.now()) {
-        _quotaRestrictedUntil = saved;
-        return true;
-      }
-    } catch (e) { }
+    if (_quotaRestrictedUntil > Date.now() && _quotaRestrictedFp === _getSbFingerprint()) {
+      return true;
+    }
     return false;
   }
 
@@ -6306,9 +6352,10 @@
         }
 
         let qTimer = null;
+        const queryTimeoutMs = state.op === 'select' ? 1800 : 6000;
         const queryPromise = Promise.resolve(q);
         const timeoutPromise = new Promise((_, reject) => {
-          qTimer = setTimeout(() => reject(new Error('Network timeout - fallback to local vault')), 5000);
+          qTimer = setTimeout(() => reject(new Error('Network timeout - fallback to local vault')), queryTimeoutMs);
         });
         let res;
         try {
@@ -6481,17 +6528,27 @@
     console.warn('[Supabase Bridge] Note wrapping window.supabase:', eWrap);
   }
 
-  function getClient() {
-    if (!smartSupabaseClient) {
-      const sbCfg = (window.PORTAL_CONFIG && typeof window.PORTAL_CONFIG.getSupabaseConfig === 'function')
-        ? window.PORTAL_CONFIG.getSupabaseConfig()
-        : { SUPABASE_URL: config.SUPABASE_URL, SUPABASE_ANON_KEY: config.SUPABASE_ANON_KEY };
+  function _createRawClientWithKey(url, key) {
+    if (!url || !key) return null;
+    try {
       if (_origCreateClientFn) {
-        rawSupabaseClient = _origCreateClientFn(sbCfg.SUPABASE_URL, sbCfg.SUPABASE_ANON_KEY);
-        smartSupabaseClient = _wrapSupabaseClient(rawSupabaseClient);
-      } else if (window.supabase && typeof window.supabase.createClient === 'function') {
-        const created = window.supabase.createClient(sbCfg.SUPABASE_URL, sbCfg.SUPABASE_ANON_KEY);
-        rawSupabaseClient = created.__rawClient || created;
+        return _origCreateClientFn(url, key);
+      } else if (typeof window !== 'undefined' && window.supabase && typeof window.supabase.createClient === 'function') {
+        const created = window.supabase.createClient(url, key);
+        return created.__rawClient || created;
+      }
+    } catch (e) { }
+    return null;
+  }
+
+  function getClient() {
+    const sbCfg = _getActiveSbConfig();
+    const fp = `${sbCfg.SUPABASE_URL}::${sbCfg.SUPABASE_ANON_KEY || sbCfg.SUPABASE_SECRET_KEY}`;
+    if (!smartSupabaseClient || _activeClientFingerprint !== fp) {
+      _activeClientFingerprint = fp;
+      const effectiveKey = sbCfg.SUPABASE_ANON_KEY || sbCfg.SUPABASE_SECRET_KEY;
+      rawSupabaseClient = _createRawClientWithKey(sbCfg.SUPABASE_URL, effectiveKey);
+      if (rawSupabaseClient) {
         smartSupabaseClient = _wrapSupabaseClient(rawSupabaseClient);
       } else {
         smartSupabaseClient = _wrapSupabaseClient({});
@@ -6500,20 +6557,25 @@
     return smartSupabaseClient;
   }
 
-  window.resetPortalSupabaseClient = function (newUrl, newKey) {
+  window.resetPortalSupabaseClient = function (newUrl, newKey, newSecretKey) {
+    const cleanUrl = String(newUrl || '').trim();
+    const cleanKey = String(newKey || newSecretKey || '').trim();
+    const cleanSecret = String(newSecretKey || newKey || '').trim();
     if (window.PORTAL_CONFIG && typeof window.PORTAL_CONFIG.saveSupabaseConfig === 'function') {
-      window.PORTAL_CONFIG.saveSupabaseConfig({ SUPABASE_URL: newUrl, SUPABASE_ANON_KEY: newKey });
+      window.PORTAL_CONFIG.saveSupabaseConfig({
+        SUPABASE_URL: cleanUrl,
+        SUPABASE_ANON_KEY: cleanKey,
+        SUPABASE_SECRET_KEY: cleanSecret
+      });
     } else if (window.PORTAL_CONFIG) {
-      if (newUrl) window.PORTAL_CONFIG.SUPABASE_URL = newUrl;
-      if (newKey) window.PORTAL_CONFIG.SUPABASE_ANON_KEY = newKey;
+      if (cleanUrl) window.PORTAL_CONFIG.SUPABASE_URL = cleanUrl;
+      if (cleanKey) window.PORTAL_CONFIG.SUPABASE_ANON_KEY = cleanKey;
+      if (cleanSecret) window.PORTAL_CONFIG.SUPABASE_SECRET_KEY = cleanSecret;
     }
     rawSupabaseClient = null;
     smartSupabaseClient = null;
-    _quotaRestrictedUntil = 0;
-    try {
-      sessionStorage.removeItem('portal_sb_quota_restricted_until');
-      localStorage.removeItem('portal_sb_quota_restricted_until');
-    } catch (e) { }
+    _activeClientFingerprint = '';
+    _clearQuotaRestricted();
     return getClient();
   };
 
@@ -10216,8 +10278,20 @@
 
         const mode = options.mode || 'replace'; // 'replace' | 'academic_only' | 'merge'
         const preserveAdminAndCloud = options.preserveAdminAndCloud !== false;
+
+        // Pastikan selalu menggunakan URL & Key database Supabase baru (reset circuit breaker lama)
+        _clearQuotaRestricted();
+        const sbCfg = _getActiveSbConfig();
         const sb = getClient();
-        const rawClient = (sb && sb.__rawClient) || rawSupabaseClient;
+        const candidateKeys = Array.from(new Set([
+          sbCfg.SUPABASE_SECRET_KEY,
+          sbCfg.SUPABASE_ANON_KEY
+        ].map(k => String(k || '').trim()).filter(Boolean)));
+        let activeWriteClient = _createRawClientWithKey(sbCfg.SUPABASE_URL, candidateKeys[0]) || (sb && sb.__rawClient) || rawSupabaseClient;
+        let currentKeyIdx = 0;
+        let remoteAuthOrNetBlocked = false;
+        let remoteSyncNote = '';
+        let remoteTablesSynced = 0;
 
         // Kolom resmi untuk masing-masing tabel sesuai schema.sql Supabase
         const TABLE_ALLOWED_COLUMNS = {
@@ -10298,9 +10372,9 @@
             _setTableCache(tbl, Array.from(mapById.values()));
           }
 
-          // Sinkronkan ke Supabase Database dalam batch (chunk 100 baris)
+          // Sinkronkan ke Database Supabase Baru dalam batch (chunk 100 baris)
           let remoteSyncOk = false;
-          if (rawClient && typeof rawClient.from === 'function' && !_isQuotaRestricted()) {
+          if (activeWriteClient && typeof activeWriteClient.from === 'function' && !remoteAuthOrNetBlocked) {
             try {
               const allowedCols = TABLE_ALLOWED_COLUMNS[tbl];
               const cleanForDb = incomingRows.map(row => {
@@ -10321,18 +10395,41 @@
 
               if (cleanForDb.length === 0) {
                 if (mode === 'replace' || mode === 'academic_only') {
-                  const { error: delErr } = await rawClient.from(tbl).delete().neq(pk, '__PORTAL_NEVER_MATCH__');
+                  const { error: delErr } = await activeWriteClient.from(tbl).delete().neq(pk, '__PORTAL_NEVER_MATCH__');
                   if (!delErr) remoteSyncOk = true;
+                  else if (_isQuotaOrNetworkError(delErr)) {
+                    if (currentKeyIdx + 1 < candidateKeys.length) {
+                      currentKeyIdx++;
+                      activeWriteClient = _createRawClientWithKey(sbCfg.SUPABASE_URL, candidateKeys[currentKeyIdx]);
+                      const retryDel = await activeWriteClient.from(tbl).delete().neq(pk, '__PORTAL_NEVER_MATCH__');
+                      if (!retryDel.error) remoteSyncOk = true;
+                    }
+                    if (!remoteSyncOk) {
+                      remoteAuthOrNetBlocked = true;
+                      remoteSyncNote = String(delErr.message || delErr.hint || delErr.code || '');
+                      _markQuotaRestricted();
+                    }
+                  }
                 } else {
                   remoteSyncOk = true;
                 }
               } else {
-                // Upsert terlebih dahulu agar bila gagal karena koneksi/kuota, tabel remote tidak terlanjur kosong
                 let allChunksOk = true;
+                let tableClearedBeforeInsertFallback = false;
                 const chunkSize = 100;
                 for (let i = 0; i < cleanForDb.length; i += chunkSize) {
                   const chunk = cleanForDb.slice(i, i + chunkSize);
-                  let { error: upErr } = await rawClient.from(tbl).upsert(chunk, { onConflict: pk });
+                  let { error: upErr } = await activeWriteClient.from(tbl).upsert(chunk, { onConflict: pk });
+
+                  // Jika gagal karena key pertama ditolak (401/403) dan ada key kandidat kedua, coba key kedua
+                  if (upErr && _isQuotaOrNetworkError(upErr) && currentKeyIdx + 1 < candidateKeys.length) {
+                    currentKeyIdx++;
+                    activeWriteClient = _createRawClientWithKey(sbCfg.SUPABASE_URL, candidateKeys[currentKeyIdx]);
+                    const retryKeyRes = await activeWriteClient.from(tbl).upsert(chunk, { onConflict: pk });
+                    upErr = retryKeyRes ? retryKeyRes.error : null;
+                  }
+
+                  // Fallback untuk tabel Users bila kolom Jenis Kelamin / Jenis PTK belum ada di schema
                   if (upErr && tbl === 'Users') {
                     const fallbackChunk = chunk.map(u => {
                       const copy = { ...u };
@@ -10340,21 +10437,47 @@
                       delete copy['Jenis PTK'];
                       return copy;
                     });
-                    const retryRes = await rawClient.from(tbl).upsert(fallbackChunk, { onConflict: pk });
+                    const retryRes = await activeWriteClient.from(tbl).upsert(fallbackChunk, { onConflict: pk });
                     upErr = retryRes ? retryRes.error : null;
                   }
+
+                  // Fallback ke delete + insert bila tabel di Supabase baru belum memiliki constraint UNIQUE/PK untuk ON CONFLICT
+                  if (upErr && !_isQuotaOrNetworkError(upErr) && (mode === 'replace' || mode === 'academic_only')) {
+                    if (!tableClearedBeforeInsertFallback) {
+                      await activeWriteClient.from(tbl).delete().neq(pk, '__PORTAL_NEVER_MATCH__');
+                      tableClearedBeforeInsertFallback = true;
+                    }
+                    let insChunk = chunk;
+                    if (tbl === 'Users') {
+                      insChunk = chunk.map(u => {
+                        const copy = { ...u };
+                        delete copy['Jenis Kelamin'];
+                        delete copy['Jenis PTK'];
+                        return copy;
+                      });
+                    }
+                    const insRes = await activeWriteClient.from(tbl).insert(insChunk);
+                    upErr = insRes ? insRes.error : null;
+                  }
+
                   if (upErr) {
                     allChunksOk = false;
-                    if (_isQuotaOrNetworkError(upErr)) _markQuotaRestricted();
+                    remoteSyncNote = String(upErr.message || upErr.hint || upErr.details || upErr.code || '');
+                    if (_isQuotaOrNetworkError(upErr)) {
+                      remoteAuthOrNetBlocked = true;
+                      _markQuotaRestricted();
+                    }
                     break;
                   }
                 }
                 if (allChunksOk) {
                   remoteSyncOk = true;
+                  remoteTablesSynced++;
                 }
               }
             } catch (dbSyncErr) {
               console.warn(`[importFullDatabaseBackup] Sinkronisasi tabel ${tbl} ke Supabase catatan:`, dbSyncErr);
+              remoteSyncNote = String(dbSyncErr.message || dbSyncErr || '');
             }
           }
 
@@ -10426,9 +10549,15 @@
           await this.updateSettings(settingsUpdate);
         }
 
+        const targetHost = sbCfg.SUPABASE_URL.replace(/^https?:\/\//, '');
         return {
           success: true,
-          message: `File backup database (${backupData.sourceFileName || backupData.semesterLabel || 'db_cluster.backup'}) berhasil dipulihkan & diterapkan ke aplikasi (${totalRestored} baris data)!`,
+          message: remoteTablesSynced > 0
+            ? `File backup (${backupData.sourceFileName || 'db_cluster.backup'}) berhasil disimpan ke database Supabase baru (${targetHost}) & diterapkan di aplikasi (${totalRestored} baris data)!`
+            : `File backup (${backupData.sourceFileName || 'db_cluster.backup'}) berhasil diterapkan di aplikasi (${totalRestored} baris data) dengan target database ${targetHost}${remoteSyncNote ? ' (Catatan API Supabase: ' + remoteSyncNote + ')' : ''}!`,
+          remoteSyncedTables: remoteTablesSynced,
+          remoteSyncNote: remoteSyncNote,
+          targetSupabaseUrl: sbCfg.SUPABASE_URL,
           summary: restoredSummary,
           academicYear: backupData.academicYear || '',
           semester: backupData.semester || ''
@@ -10436,6 +10565,26 @@
       } catch (e) {
         console.error('[importFullDatabaseBackup error]:', e);
         return { success: false, message: e.message || 'Gagal memulihkan file .backup database.' };
+      }
+    },
+
+    async syncCurrentDatabaseToSupabase(customCfg = {}) {
+      try {
+        if (customCfg && (customCfg.url || customCfg.anonKey || customCfg.secretKey)) {
+          window.resetPortalSupabaseClient(customCfg.url, customCfg.anonKey, customCfg.secretKey);
+        } else {
+          _clearQuotaRestricted();
+        }
+        const exported = await this.exportFullDatabaseBackup();
+        if (!exported || !exported.success || !exported.backup) {
+          return { success: false, message: 'Gagal mengumpulkan data aplikasi saat ini untuk disinkronkan.' };
+        }
+        return await this.importFullDatabaseBackup(exported.backup, {
+          mode: 'replace',
+          preserveAdminAndCloud: true
+        });
+      } catch (e) {
+        return { success: false, message: e.message || 'Gagal menyinkronkan data ke Supabase baru.' };
       }
     },
 
