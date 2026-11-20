@@ -9,20 +9,20 @@
 
   window.PORTAL_CONFIG = window.PORTAL_CONFIG || {};
 
-  // Pastikan selalu menggunakan database Supabase baru (bukan database lama jpaaidqdyarboowjusom yang sudah ter-pause)
-  if (!window.PORTAL_CONFIG.SUPABASE_URL || window.PORTAL_CONFIG.SUPABASE_URL.indexOf('jpaaidqdyarboowjusom') !== -1) {
-    window.PORTAL_CONFIG.SUPABASE_URL = NEW_SUPABASE_URL;
-  } else {
+  // Hanya isi jika belum disetel oleh config.js / runtime, atau jika masih memakai URL/Key lama yang ter-pause
+  var curUrl = String(window.PORTAL_CONFIG.SUPABASE_URL || '').trim();
+  if (!curUrl || curUrl.indexOf('jpaaidqdyarboowjusom') !== -1) {
     window.PORTAL_CONFIG.SUPABASE_URL = NEW_SUPABASE_URL;
   }
 
-  if (!window.PORTAL_CONFIG.SUPABASE_ANON_KEY || window.PORTAL_CONFIG.SUPABASE_ANON_KEY.indexOf('GjKXAsbZi1HP2kkBGMvMzg') !== -1) {
-    window.PORTAL_CONFIG.SUPABASE_ANON_KEY = NEW_SUPABASE_KEY;
-  } else {
+  var curKey = String(window.PORTAL_CONFIG.SUPABASE_ANON_KEY || '').trim();
+  if (!curKey || curKey.indexOf('GjKXAsbZi1HP2kkBGMvMzg') !== -1) {
     window.PORTAL_CONFIG.SUPABASE_ANON_KEY = NEW_SUPABASE_KEY;
   }
 
-  window.PORTAL_CONFIG.SUPABASE_SECRET_KEY = NEW_SUPABASE_SECRET_KEY;
+  if (!window.PORTAL_CONFIG.SUPABASE_SECRET_KEY) {
+    window.PORTAL_CONFIG.SUPABASE_SECRET_KEY = NEW_SUPABASE_SECRET_KEY;
+  }
 
   if (!window.PORTAL_CONFIG.CLOUDINARY) {
     window.PORTAL_CONFIG.CLOUDINARY = {

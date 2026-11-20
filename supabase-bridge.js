@@ -5922,19 +5922,22 @@
     }
   }
 
-  function _normalizeTableRows(tableName, rows) {
+  function _normalizeTableRows(tableName, rows, options = {}) {
     if (!Array.isArray(rows)) return [];
-    const defaults = _getDefaultTableRows(tableName);
+    const authoritativeRemote = Boolean(options && options.authoritativeRemote);
+    const defaults = authoritativeRemote ? [] : _getDefaultTableRows(tableName);
     const pk = _getPrimaryKeyCol(tableName);
-    const deletedIds = _getDeletedIds(tableName);
-    const isOverridden = _isSemesterOverridden(tableName);
+    const deletedIds = authoritativeRemote ? new Set() : _getDeletedIds(tableName);
+    const isOverridden = authoritativeRemote || _isSemesterOverridden(tableName);
 
     // Buat lookup map dari default snapshot untuk pelengkap metadata guru bila ID sama
     const defaultsLookup = new Map();
-    defaults.forEach(d => {
-      const k = String(d[pk] || d['ID Absensi'] || d['ID Pengumuman'] || d.ID || d.id || '');
-      if (k) defaultsLookup.set(k, d);
-    });
+    if (!authoritativeRemote) {
+      defaults.forEach(d => {
+        const k = String(d[pk] || d['ID Absensi'] || d['ID Pengumuman'] || d.ID || d.id || '');
+        if (k) defaultsLookup.set(k, d);
+      });
+    }
 
     // Filter baris dummy, baris yang telah dihapus user, atau ID usang
     const cleaned = rows.filter(r => {
@@ -5954,8 +5957,8 @@
     });
 
     const mergedMap = new Map();
-    // Masukkan baris snapshot asli HANYA jika tabel belum diganti/direset lewat fitur Backup/Ganti Semester
-    if (!isOverridden) {
+    // Masukkan baris snapshot asli HANYA jika tabel belum diganti/direset dan bukan data resmi langsung dari Supabase
+    if (!isOverridden && !authoritativeRemote) {
       defaults.forEach(d => {
         const k = String(d[pk] || d['ID Absensi'] || d['ID Pengumuman'] || d.ID || d.id || '');
         if (k && !deletedIds.has(k)) {
@@ -6112,9 +6115,13 @@
     return seeded;
   }
 
-  function _setTableCache(tableName, rows) {
-    const safeRows = _normalizeTableRows(tableName, Array.isArray(rows) ? rows : []);
+  function _setTableCache(tableName, rows, options = {}) {
+    const safeRows = _normalizeTableRows(tableName, Array.isArray(rows) ? rows : [], options);
     try {
+      if (options && options.authoritativeRemote) {
+        localStorage.setItem('portal_semester_override_' + tableName, 'true');
+        localStorage.removeItem('portal_db_deleted_' + tableName);
+      }
       localStorage.setItem('portal_db_table_' + tableName, JSON.stringify(safeRows));
       if (tableName === 'Users') {
         localStorage.setItem('portal_users_db_cache', JSON.stringify(safeRows));
@@ -6373,7 +6380,18 @@
           return res;
         }
 
-        const isClearedEmpty = (typeof localStorage !== 'undefined' && localStorage.getItem('portal_semester_cleared_' + tableName) === 'true');
+        let isRemoteEmptyAuthoritative = (typeof localStorage !== 'undefined' && localStorage.getItem('portal_semester_cleared_' + tableName) === 'true');
+        if (!isRemoteEmptyAuthoritative && typeof localStorage !== 'undefined') {
+          try {
+            const rawEmpty = localStorage.getItem('portal_db_remote_empty_tables');
+            if (rawEmpty) {
+              const emptyList = JSON.parse(rawEmpty);
+              if (Array.isArray(emptyList) && emptyList.includes(tableName)) {
+                isRemoteEmptyAuthoritative = true;
+              }
+            }
+          } catch (e) { }
+        }
         const isLocalBackupOnly = (typeof localStorage !== 'undefined' && localStorage.getItem('portal_backup_local_only_' + tableName) === 'true');
 
         if (state.op === 'select' && isLocalBackupOnly) {
@@ -6381,14 +6399,14 @@
         }
 
         if (state.op === 'select' && state.filters.length === 0 && (!state.selectCols || state.selectCols === '*') && Array.isArray(res.data)) {
-          if (res.data.length > 0 || isClearedEmpty) {
-            _setTableCache(tableName, res.data);
+          if (res.data.length > 0 || isRemoteEmptyAuthoritative) {
+            _setTableCache(tableName, res.data, { authoritativeRemote: true });
             res.data = _getTableCache(tableName).map(r => PortalCloudStorage.hydrateFromVault({ ...r }));
           } else {
             return executeLocal();
           }
         } else if (state.op === 'select' && Array.isArray(res.data)) {
-          if (res.data.length === 0 && !isClearedEmpty) {
+          if (res.data.length === 0 && !isRemoteEmptyAuthoritative) {
             const localFallback = executeLocal();
             if (localFallback && Array.isArray(localFallback.data) && localFallback.data.length > 0) {
               return localFallback;
@@ -7403,6 +7421,29 @@
         if (!settings.school_npsn || settings.school_npsn === '69989028') {
           settings.school_npsn = '70011748';
         }
+        // Sinkronkan penanda epoch & tabel kosong antar perangkat agar seluruh perangkat menampilkan data Supabase yang sama persis
+        try {
+          if (settings.portal_db_empty_tables !== undefined) {
+            localStorage.setItem('portal_db_remote_empty_tables', String(settings.portal_db_empty_tables));
+          }
+          if (settings.portal_db_sync_epoch) {
+            const prevEpoch = localStorage.getItem('portal_db_sync_epoch') || '';
+            if (prevEpoch !== String(settings.portal_db_sync_epoch)) {
+              localStorage.setItem('portal_db_sync_epoch', String(settings.portal_db_sync_epoch));
+              localStorage.removeItem('portal_landing_teachers_cache');
+              [
+                'Users', 'PendingUsers', 'Classes', 'Students', 'Subjects',
+                'Attendance', 'Exams', 'Questions', 'Grades', 'Violations',
+                'ExamSessions', 'Announcements', 'Learnings', 'LearningSessions'
+              ].forEach(tbl => {
+                localStorage.removeItem('portal_db_table_' + tbl);
+                localStorage.removeItem('portal_db_deleted_' + tbl);
+                localStorage.removeItem('portal_backup_local_only_' + tbl);
+                localStorage.setItem('portal_semester_override_' + tbl, 'true');
+              });
+            }
+          }
+        } catch (eSync) { }
         // Sinkronkan konfigurasi Cloudinary dari Settings Supabase agar seluruh perangkat Guru & Siswa otomatis terhubung ke Cloudinary
         if (settings.cloudinary_cloud_name || settings.cloudinary_upload_preset || settings.cloudinary_api_key) {
           PortalCloudStorage.saveConfig({
@@ -10471,6 +10512,16 @@
                   }
                 }
                 if (allChunksOk) {
+                  // Pada mode replace / academic_only, hapus sisa baris lama di Supabase yang tidak ada di file backup
+                  if ((mode === 'replace' || mode === 'academic_only') && !tableClearedBeforeInsertFallback) {
+                    try {
+                      const keepIds = cleanForDb.map(r => String(r[pk] || '').trim()).filter(Boolean);
+                      if (keepIds.length > 0 && keepIds.length <= 250) {
+                        const quotedIn = '(' + keepIds.map(id => '"' + id.replace(/"/g, '\\"') + '"').join(',') + ')';
+                        await activeWriteClient.from(tbl).delete().not(pk, 'in', quotedIn);
+                      }
+                    } catch (pruneErr) { }
+                  }
                   remoteSyncOk = true;
                   remoteTablesSynced++;
                 }
@@ -10539,6 +10590,14 @@
         }
         if (backupData.academicYear) settingsUpdate.academic_year = backupData.academicYear;
         if (backupData.semester) settingsUpdate.semester = backupData.semester;
+        const syncEpoch = new Date().toISOString();
+        const emptyTablesList = tablesToProcess.filter(tbl => Array.isArray(backupData.tables[tbl]) && backupData.tables[tbl].length === 0);
+        settingsUpdate.portal_db_sync_epoch = syncEpoch;
+        settingsUpdate.portal_db_empty_tables = JSON.stringify(emptyTablesList);
+        try {
+          localStorage.setItem('portal_db_sync_epoch', syncEpoch);
+          localStorage.setItem('portal_db_remote_empty_tables', settingsUpdate.portal_db_empty_tables);
+        } catch (e) { }
         if (preserveAdminAndCloud && currentCloudCfg.cloudinaryCloudName) {
           PortalCloudStorage.saveConfig(currentCloudCfg);
           settingsUpdate.cloudinary_cloud_name = currentCloudCfg.cloudinaryCloudName;
@@ -10644,6 +10703,13 @@
         const settingsPayload = {};
         if (newAcademicYear) settingsPayload.academic_year = newAcademicYear;
         if (newSemester) settingsPayload.semester = newSemester;
+        const resetEpoch = new Date().toISOString();
+        settingsPayload.portal_db_sync_epoch = resetEpoch;
+        settingsPayload.portal_db_empty_tables = JSON.stringify(transactionalTables);
+        try {
+          localStorage.setItem('portal_db_sync_epoch', resetEpoch);
+          localStorage.setItem('portal_db_remote_empty_tables', settingsPayload.portal_db_empty_tables);
+        } catch (e) { }
         if (Object.keys(settingsPayload).length > 0) {
           await this.updateSettings(settingsPayload);
         }
