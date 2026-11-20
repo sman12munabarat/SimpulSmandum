@@ -10284,8 +10284,8 @@
         const sbCfg = _getActiveSbConfig();
         const sb = getClient();
         const candidateKeys = Array.from(new Set([
-          sbCfg.SUPABASE_SECRET_KEY,
-          sbCfg.SUPABASE_ANON_KEY
+          sbCfg.SUPABASE_ANON_KEY,
+          sbCfg.SUPABASE_SECRET_KEY
         ].map(k => String(k || '').trim()).filter(Boolean)));
         let activeWriteClient = _createRawClientWithKey(sbCfg.SUPABASE_URL, candidateKeys[0]) || (sb && sb.__rawClient) || rawSupabaseClient;
         let currentKeyIdx = 0;
