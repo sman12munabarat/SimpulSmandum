@@ -4,7 +4,7 @@
 // ============================================================================
 (function () {
   var NEW_SUPABASE_URL = 'https://mqvvaszlutjokflihcpm.supabase.co';
-  var NEW_SUPABASE_KEY = 'sb_secret_MOQDr1aIcF26IHU4mKmOZA_2Aaos7_z';
+  var NEW_SUPABASE_KEY = 'sb_publishable_qjQM9SayNAaUU9no9FUWBQ_MSXgIEMz';
   var NEW_SUPABASE_SECRET_KEY = 'sb_secret_MOQDr1aIcF26IHU4mKmOZA_2Aaos7_z';
 
   window.PORTAL_CONFIG = window.PORTAL_CONFIG || {};
