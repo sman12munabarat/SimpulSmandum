@@ -709,9 +709,104 @@
             gap: 14px
         }
 
+        .bk-grid-2col {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 14px;
+        }
+
+        .bk-card-box {
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 12px;
+            min-width: 0;
+            max-width: 100%;
+        }
+
+        .settings-section,
+        .settings-section > *,
+        .bk-card-box > * {
+            min-width: 0;
+            max-width: 100%;
+            overflow-wrap: break-word;
+        }
+
+        .bk-card-box code,
+        #bkOperationStatusBox code,
+        #bkImportPreviewBox,
+        #stCloudinaryTestStatus,
+        #stSupabaseSyncStatus {
+            word-break: break-word;
+            overflow-wrap: anywhere;
+        }
+
+        .settings-actions-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .btn-role-switch {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            border: 1px solid rgba(56, 189, 248, 0.45);
+            background: rgba(56, 189, 248, 0.14);
+            color: #38bdf8;
+            cursor: pointer;
+            transition: var(--transition);
+            white-space: nowrap;
+        }
+
+        .btn-role-switch:hover {
+            background: rgba(56, 189, 248, 0.28);
+            transform: translateY(-1px);
+        }
+
+        @media(max-width:860px) {
+            .bk-grid-2col {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+        }
+
         @media(max-width:640px) {
             .form-row {
                 grid-template-columns: 1fr
+            }
+
+            .settings-section {
+                padding: 14px !important;
+            }
+
+            .bk-card-box {
+                padding: 14px;
+            }
+
+            .settings-actions-row .btn,
+            #stBackupSemesterSection .btn {
+                width: 100%;
+                justify-content: center;
+                text-align: center;
+                white-space: normal;
+                height: auto;
+                min-height: 42px;
+                padding: 10px 12px;
+                line-height: 1.35;
+            }
+
+            .btn-role-switch span.role-switch-label-full {
+                display: none;
             }
         }
 
@@ -7673,6 +7768,10 @@
                     class="fas fa-bars"></i></button>
             <h2 id="topbarTitle">Dashboard</h2>
             <div style="flex:1"></div>
+            <button type="button" class="btn-role-switch" id="btnSwitchRoleTop" style="display:none" onclick="switchActiveAccountRole()" title="Beralih antara Mode Admin dan Mode Guru">
+                <i class="fas fa-exchange-alt"></i>
+                <span class="role-switch-label-full" id="btnSwitchRoleTopText">Ke Mode Guru</span>
+            </button>
             <div class="topbar-user" onclick="openProfileModal()">
                 <div id="topbarAvatarWrap">
                     <div class="topbar-avatar-placeholder" id="topbarAvatarInitial">A</div>
@@ -7740,6 +7839,8 @@
                 </div>
                 <div class="sidebar-section"
                     style="margin-top:auto;border-top:1px solid var(--border);padding-top:12px">
+                    <div class="sidebar-item" onclick="switchActiveAccountRole()" id="menu-switchRoleToGuru" style="color:#38bdf8"><i
+                            class="fas fa-exchange-alt"></i><span>Beralih ke Mode Guru</span></div>
                     <div class="sidebar-item" onclick="loadPage('settingsAdmin')" id="menu-settingsAdmin"><i
                             class="fas fa-cog fa-spin" style="animation-duration:4s"></i><span>Pengaturan</span></div>
                 </div>
@@ -7771,6 +7872,8 @@
                             class="fas fa-bullhorn"></i><span>Pengumuman</span></div>
                     <div class="sidebar-item" onclick="loadPage('profileGuru')" id="menu-profileGuru"><i
                             class="fas fa-user-edit"></i><span>Profil Saya</span></div>
+                    <div class="sidebar-item" onclick="switchActiveAccountRole()" id="menu-switchRoleToAdmin" style="display:none;color:#a855f7;border-top:1px solid var(--border);margin-top:8px;padding-top:12px"><i
+                            class="fas fa-user-shield"></i><span>Kembali ke Mode Admin</span></div>
                 </div>
             </aside>
 
@@ -11189,13 +11292,15 @@
                     resetButton();
                     if (res && res.success && res.user) {
                         var userRole = String(res.user.role || 'guru').toLowerCase();
+                        res.user.originalRole = res.user.originalRole || userRole;
                         if (loginTarget === 'admin' && userRole !== 'admin') {
                             showToast('Akses ditolak. Akun ini bukan Administrator!', 'error');
                             return;
                         }
                         if (loginTarget === 'guru' && userRole === 'admin') {
-                            showToast('Login berhasil sebagai Administrator.', 'info');
-                            loginTarget = 'admin';
+                            res.user.role = 'guru';
+                            userRole = 'guru';
+                            showToast('Masuk ke Mode Guru (Anda dapat kembali ke Mode Admin kapan saja).', 'info');
                         }
                         APP.currentUser = res.user;
                         try {
@@ -11319,18 +11424,33 @@
             var u = APP.currentUser;
             if (!u) return;
             var role = String(u.role || 'guru').toLowerCase();
+            var origRole = String(u.originalRole || role).toLowerCase();
+            u.originalRole = origRole;
             document.getElementById('landingPage').style.display = 'none';
             document.getElementById('dashboardPage').style.display = 'flex';
             document.getElementById('dashboardPage').classList.add('active');
             updateThemeButtonsUI();
             document.getElementById('topbarUserName').textContent = u.namaLengkap || u.username;
-            document.getElementById('topbarUserRole').textContent = (role === 'admin' ? 'Administrator' : 'Guru Pengajar');
+            document.getElementById('topbarUserRole').textContent = (role === 'admin' ? 'Administrator' : (origRole === 'admin' ? 'Mode Guru (Admin)' : 'Guru Pengajar'));
             document.getElementById('topbarAvatarInitial').textContent = (u.namaLengkap ? u.namaLengkap[0].toUpperCase() : 'U');
             if (u.fotoProfil) {
                 document.getElementById('topbarAvatarWrap').innerHTML = '<img src="' + u.fotoProfil + '" class="topbar-avatar" onclick="previewFotoGuru(esc(APP.currentUser.namaLengkap), APP.currentUser.fotoProfil)" style="cursor:pointer" title="Klik untuk lihat foto profil penuh" onerror="this.style.display=\'none\'">';
             } else {
                 document.getElementById('topbarAvatarWrap').innerHTML = '<div class="topbar-avatar-placeholder" id="topbarAvatarInitial">' + (u.namaLengkap ? u.namaLengkap[0].toUpperCase() : 'U') + '</div>';
             }
+
+            var btnSwitchTop = document.getElementById('btnSwitchRoleTop');
+            var btnSwitchTopText = document.getElementById('btnSwitchRoleTopText');
+            var menuToAdmin = document.getElementById('menu-switchRoleToAdmin');
+            if (origRole === 'admin') {
+                if (btnSwitchTop) btnSwitchTop.style.display = 'inline-flex';
+                if (btnSwitchTopText) btnSwitchTopText.textContent = (role === 'admin') ? 'Ke Mode Guru' : 'Ke Mode Admin';
+                if (menuToAdmin) menuToAdmin.style.display = (role === 'guru') ? 'flex' : 'none';
+            } else {
+                if (btnSwitchTop) btnSwitchTop.style.display = 'none';
+                if (menuToAdmin) menuToAdmin.style.display = 'none';
+            }
+
             if (role === 'admin') {
                 document.getElementById('adminSidebar').style.display = 'block';
                 document.getElementById('guruSidebar').style.display = 'none';
@@ -11355,6 +11475,27 @@
             }
             showToast('Selamat datang, ' + (u.namaLengkap || u.username) + '!', 'success');
         }
+
+        window.switchActiveAccountRole = function () {
+            var u = APP.currentUser;
+            if (!u) return;
+            var curRole = String(u.role || 'guru').toLowerCase();
+            var origRole = String(u.originalRole || curRole).toLowerCase();
+            if (origRole !== 'admin') {
+                showToast('Hanya akun Administrator yang dapat beralih antara Mode Admin dan Mode Guru.', 'warning');
+                return;
+            }
+            var nextRole = (curRole === 'admin') ? 'guru' : 'admin';
+            u.role = nextRole;
+            u.originalRole = 'admin';
+            try {
+                localStorage.setItem('portal_current_user', JSON.stringify(u));
+                localStorage.setItem('portal_current_page', nextRole === 'admin' ? 'dashboardAdmin' : 'dashboardGuru');
+            } catch (e) { }
+            closeMobileSidebar();
+            initDashboard();
+            showToast('Berhasil beralih ke ' + (nextRole === 'admin' ? 'Mode Administrator' : 'Mode Guru Pengajar') + '!', 'success');
+        };
 
         function toggleSidebar() {
             var role = (APP.currentUser && APP.currentUser.role === 'admin') ? 'admin' : 'guru';
@@ -12758,8 +12899,9 @@
                 '<div class="form-row"><div class="form-group"><label>Jenis Kelamin</label><select class="form-control" id="muJenisKelamin"><option value="">-- Pilih Jenis Kelamin --</option><option value="Laki-laki">Laki-laki (L)</option><option value="Perempuan">Perempuan (P)</option></select></div>' +
                 '<div class="form-group"><label>Jenis PTK</label><select class="form-control" id="muJenisPtk"><option value="Pendidik">Pendidik (Guru Pengajar)</option><option value="Tenaga Kependidikan">Tenaga Kependidikan (TU / Staf)</option><option value="Guru BK">Guru BK (Bimbingan Konseling)</option></select></div></div>' +
                 '<div class="form-row"><div class="form-group"><label>Email *</label><input class="form-control" type="email" id="muEmail" placeholder="Email aktif"/></div><div class="form-group"><label>NIP</label><input class="form-control" id="muNIP" placeholder="NIP jika ada"/></div></div>' +
-                '<div class="form-row"><div class="form-group"><label>Nomor Telepon / WhatsApp</label><input class="form-control" id="muTelepon" placeholder="Contoh: 08123456789"/></div><div class="form-group"><label>Alamat</label><input class="form-control" id="muAlamat" placeholder="Alamat tempat tinggal"/></div></div>' +
-                '<div style="display:flex;gap:10px;margin-top:14px"><button class="btn btn-primary" onclick="submitAddUser()"><i class="fas fa-save"></i> Simpan Guru</button><button class="btn btn-outline" onclick="closeModal(\'generalModal\')">Batal</button></div>';
+                '<div class="form-row"><div class="form-group"><label>Nomor Telepon / WhatsApp</label><input class="form-control" id="muTelepon" placeholder="Contoh: 08123456789"/></div><div class="form-group"><label>Peran / Role Akun</label><select class="form-control" id="muRole"><option value="guru">Guru Pengajar</option><option value="admin">Administrator</option></select></div></div>' +
+                '<div class="form-group"><label>Alamat</label><input class="form-control" id="muAlamat" placeholder="Alamat tempat tinggal"/></div>' +
+                '<div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap"><button class="btn btn-primary" onclick="submitAddUser()"><i class="fas fa-save"></i> Simpan Guru</button><button class="btn btn-outline" onclick="closeModal(\'generalModal\')">Batal</button></div>';
             openModal('generalModal');
         }
 
@@ -12773,6 +12915,7 @@
                 email: v('muEmail'),
                 nip: v('muNIP'),
                 telepon: v('muTelepon'),
+                role: v('muRole') || 'guru',
                 alamat: v('muAlamat')
             };
             if (!data.username || !data.password || !data.namaLengkap || !data.email) { showToast('Lengkapi field wajib (Username, Password, Nama, Email)!', 'warning'); return; }
@@ -12828,8 +12971,9 @@
                     '<div class="form-group"><label>Jenis PTK</label><select class="form-control" id="euJenisPtk"><option value="Pendidik">Pendidik (Guru Pengajar)</option><option value="Tenaga Kependidikan">Tenaga Kependidikan (TU / Staf)</option><option value="Guru BK">Guru BK (Bimbingan Konseling)</option></select></div></div>' +
                     '<div class="form-row"><div class="form-group"><label>Email</label><input class="form-control" id="euEmail" value="' + esc(u['Email'] || '') + '"/></div><div class="form-group"><label>NIP</label><input class="form-control" id="euNIP" value="' + esc(u['NIP'] || '') + '"/></div></div>' +
                     '<div class="form-row"><div class="form-group"><label>Telepon</label><input class="form-control" id="euTelepon" value="' + esc(u['Telepon'] || '') + '"/></div><div class="form-group"><label>Status</label><select class="form-control" id="euStatus"><option value="active"' + (u['Status'] === 'active' ? ' selected' : '') + '>Active</option><option value="inactive"' + (u['Status'] === 'inactive' ? ' selected' : '') + '>Inactive</option></select></div></div>' +
+                    '<div class="form-group"><label>Peran / Role Akun</label><select class="form-control" id="euRole"><option value="guru"' + (String(u['Role'] || 'guru').toLowerCase() !== 'admin' ? ' selected' : '') + '>Guru Pengajar</option><option value="admin"' + (String(u['Role'] || '').toLowerCase() === 'admin' ? ' selected' : '') + '>Administrator</option></select></div>' +
                     '<div class="form-group"><label>Alamat</label><textarea class="form-control" id="euAlamat">' + esc(u['Alamat'] || '') + '</textarea></div>' +
-                    '<div style="display:flex;gap:10px;margin-top:14px"><button class="btn btn-primary" onclick="submitEditUser(\'' + userId + '\')"><i class="fas fa-save"></i> Simpan Perubahan</button><button class="btn btn-outline" onclick="closeModal(\'generalModal\')">Batal</button></div>';
+                    '<div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap"><button class="btn btn-primary" onclick="submitEditUser(\'' + userId + '\')"><i class="fas fa-save"></i> Simpan Perubahan</button><button class="btn btn-outline" onclick="closeModal(\'generalModal\')">Batal</button></div>';
                 openModal('generalModal');
                 var jkVal = String(u['Jenis Kelamin'] || u['jenisKelamin'] || u['jenis_kelamin'] || u['Gender'] || '').trim();
                 if (jkVal) {
@@ -12855,6 +12999,7 @@
                 nip: v('euNIP'),
                 telepon: v('euTelepon'),
                 status: v('euStatus'),
+                role: v('euRole') || 'guru',
                 alamat: v('euAlamat')
             };
             if (!data.username || !data.namaLengkap) { showToast('Username dan nama lengkap wajib diisi!', 'warning'); return; }
@@ -15470,6 +15615,12 @@
                 var clApiSecret = cloudCfg.cloudinaryApiSecret || s.cloudinary_api_secret || '';
                 var clFolder = cloudCfg.cloudinaryFolder || s.cloudinary_folder || 'portal-sekolah-smandum';
 
+                var lastBkStatus = null;
+                try {
+                    var rawBk = localStorage.getItem('portal_last_backup_status');
+                    if (rawBk) lastBkStatus = JSON.parse(rawBk);
+                } catch (e) { }
+
                 var main = document.getElementById('dashMain');
                 main.innerHTML = '<div class="page-header"><h1><i class="fas fa-cog" style="color:var(--text2)"></i> Pengaturan Portal</h1><p>Konfigurasi identitas sekolah, backup &amp; ganti data per-semester Supabase, penyimpanan media Cloudinary CDN, dan profil Administrator</p></div>' +
                     '<div class="card">' +
@@ -15482,12 +15633,12 @@
                     '</div>' +
                     '<p style="font-size:12.5px;color:var(--text2);margin-bottom:16px;line-height:1.6">Simpan cadangan (<b>Download Backup</b>) seluruh tabel database Supabase per-semester ke komputer/HP Anda, dan unggah kembali (<b>Upload / Ganti Data Semester</b>) kapan saja untuk mengganti atau memulihkan data aplikasi per-semester secara utuh (15 Tabel: <i>Guru, Kelas, Siswa, Mapel, Absensi, Ujian CBT, Bank Soal, Nilai, Sesi Ujian, Pelanggaran, Ruang Belajar, Tugas, Pengumuman, SPMB, &amp; Pengaturan</i>).</p>' +
 
-                    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px;margin-bottom:14px">' +
+                    '<div class="bk-grid-2col">' +
 
                     // Box Kiri: Download Backup
-                    '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;gap:12px">' +
+                    '<div class="bk-card-box">' +
                     '<div>' +
-                    '<div style="font-weight:700;font-size:14px;color:var(--text);margin-bottom:6px;display:flex;align-items:center;gap:8px"><i class="fas fa-cloud-download-alt" style="color:#10b981;font-size:18px"></i> 1. Download Backup Data Semester (.BACKUP)</div>' +
+                    '<div style="font-weight:700;font-size:14px;color:var(--text);margin-bottom:6px;display:flex;align-items:center;gap:8px"><i class="fas fa-cloud-download-alt" style="color:#10b981;font-size:18px;flex-shrink:0"></i> <span>1. Download Backup Data Semester (.BACKUP)</span></div>' +
                     '<p style="font-size:12px;color:var(--text2);margin-bottom:12px">Unduh seluruh data yang sedang aktif di Supabase ke dalam 1 file <code>db_cluster-DD-MM-YYYY@HH-MM-SS.backup</code> (format resmi <i>PostgreSQL Database Cluster Dump Supabase</i>) lengkap untuk arsip semester.</p>' +
                     '<div class="form-row" style="margin-bottom:8px">' +
                     '<div class="form-group" style="margin-bottom:0"><label style="font-size:11.5px">Label Tahun Ajaran</label><input class="form-control form-control-sm" id="bkExportYear" value="' + esc(curTahunAjaran) + '" placeholder="2026/2027"/></div>' +
@@ -15502,12 +15653,12 @@
                     '</div>' +
 
                     // Box Kanan: Upload & Ganti Data Semester
-                    '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;gap:12px">' +
+                    '<div class="bk-card-box">' +
                     '<div>' +
-                    '<div style="font-weight:700;font-size:14px;color:var(--text);margin-bottom:6px;display:flex;align-items:center;gap:8px"><i class="fas fa-cloud-upload-alt" style="color:#38bdf8;font-size:18px"></i> 2. Upload &amp; Ganti Data Per-Semester (.BACKUP)</div>' +
+                    '<div style="font-weight:700;font-size:14px;color:var(--text);margin-bottom:6px;display:flex;align-items:center;gap:8px"><i class="fas fa-cloud-upload-alt" style="color:#38bdf8;font-size:18px;flex-shrink:0"></i> <span>2. Upload &amp; Ganti Data Per-Semester (.BACKUP)</span></div>' +
                     '<p style="font-size:12px;color:var(--text2);margin-bottom:12px">Pilih file backup database Supabase (<code>db_cluster-*.backup</code>) yang pernah Anda unduh untuk dipulihkan atau menggantikan data per-semester di Supabase.</p>' +
                     '<div style="margin-bottom:10px">' +
-                    '<label for="bkImportFileInput" class="btn btn-outline btn-sm" style="cursor:pointer;width:100%;justify-content:center;border-style:dashed;padding:10px"><i class="fas fa-file-import" style="color:#38bdf8"></i> <span id="bkImportFileLabel">Pilih File Database (.BACKUP) dari Perangkat</span></label>' +
+                    '<label for="bkImportFileInput" class="btn btn-outline btn-sm" style="cursor:pointer;width:100%;justify-content:center;border-style:dashed;padding:10px"><i class="fas fa-file-import" style="color:#38bdf8"></i> <span id="bkImportFileLabel">' + (lastBkStatus && lastBkStatus.fileName ? esc(lastBkStatus.fileName) + ' (Aktif Terpasang)' : 'Pilih File Database (.BACKUP) dari Perangkat') + '</span></label>' +
                     '<input type="file" id="bkImportFileInput" accept=".backup,.sql,.dump" style="display:none" onchange="handleBackupFileSelect(this)"/>' +
                     '</div>' +
                     '<div id="bkImportPreviewBox" style="display:none;background:var(--bg3);border:1px solid rgba(56,189,248,0.35);border-radius:10px;padding:10px;margin-bottom:10px;font-size:11.5px"></div>' +
@@ -15523,11 +15674,11 @@
                     '<input type="checkbox" id="bkPreserveAdmin" checked/> Pertahankan akun Admin utama &amp; konfigurasi Cloudinary saat ini' +
                     '</label>' +
                     '</div>' +
-                    '<button type="button" class="btn btn-primary" id="btnExecuteRestoreBackup" style="width:100%;justify-content:center;background:linear-gradient(135deg,#2563eb,#7c3aed);border:none;font-weight:700" onclick="executeRestoreDatabaseBackup()"><i class="fas fa-upload"></i> Upload &amp; Terapkan File .BACKUP ke Supabase</button>' +
+                    '<button type="button" class="btn btn-primary" id="btnExecuteRestoreBackup" style="width:100%;justify-content:center;background:linear-gradient(135deg,#2563eb,#7c3aed);border:none;font-weight:700" onclick="executeRestoreDatabaseBackup()"><i class="fas fa-lock"></i> Upload &amp; Terapkan File .BACKUP (Verifikasi Admin)</button>' +
                     '</div>' +
 
                     '</div>' +
-                    '<div id="bkOperationStatusBox" style="display:none;margin-top:8px;padding:12px;border-radius:10px;font-size:12.5px"></div>' +
+                    '<div id="bkOperationStatusBox" style="' + (lastBkStatus ? 'display:block;background:' + (lastBkStatus.isWarning ? 'rgba(245,158,11,0.12)' : 'rgba(16,185,129,0.12)') + ';border:1px solid ' + (lastBkStatus.isWarning ? 'rgba(245,158,11,0.4)' : 'rgba(16,185,129,0.4)') + ';' : 'display:none;') + 'margin-top:8px;padding:12px;border-radius:10px;font-size:12.5px">' + (lastBkStatus ? lastBkStatus.html : '') + '</div>' +
                     '</div>' +
 
                     // ── 2. PANEL PENYIMPANAN MEDIA CLOUDINARY CDN (FOTO, FILE & VIDEO) ──
@@ -15550,7 +15701,7 @@
                     '<div class="form-row">' +
                     '<div class="form-group"><label><i class="fas fa-folder-open"></i> Nama Folder Media di Cloudinary</label><input class="form-control" id="stCloudinaryFolder" value="' + esc(clFolder) + '" placeholder="portal-sekolah-smandum"/></div>' +
                     '</div>' +
-                    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;margin-bottom:8px">' +
+                    '<div class="settings-actions-row" style="margin-top:6px;margin-bottom:8px">' +
                     '<button type="button" class="btn btn-outline btn-sm" onclick="testCloudinaryFromSettings()"><i class="fas fa-plug" style="color:#10b981"></i> Tes Koneksi &amp; Upload Cloudinary</button>' +
                     '<button type="button" class="btn btn-primary btn-sm" style="background:linear-gradient(135deg,#0284c7,#0369a1);border:none" onclick="migrateAllMediaToCloudinaryFromSettings()"><i class="fas fa-cloud-upload-alt"></i> Migrasi Seluruh Foto/File/Video Lama ke Cloudinary</button>' +
                     '</div>' +
@@ -15572,7 +15723,7 @@
                     '<div class="form-row">' +
                     '<div class="form-group"><label><i class="fas fa-user-secret"></i> Supabase Secret Key (Opsional - Untuk Upload Backup Penuh)</label><input class="form-control" id="stSupabaseSecretKey" value="' + esc(sbCfg.SUPABASE_SECRET_KEY || sbCfg.SUPABASE_ANON_KEY || '') + '" placeholder="sb_secret_..."/></div>' +
                     '</div>' +
-                    '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+                    '<div class="settings-actions-row">' +
                     '<button type="button" class="btn btn-primary btn-sm" onclick="applyRuntimeSupabaseConfig()"><i class="fas fa-sync"></i> Terapkan Koneksi Database</button>' +
                     '<button type="button" class="btn btn-primary btn-sm" style="background:linear-gradient(135deg,#059669,#10b981);border:none" onclick="syncCurrentDatabaseToSupabaseFromSettings()"><i class="fas fa-cloud-upload-alt"></i> Simpan &amp; Sinkronkan Data ke Supabase Baru</button>' +
                     '<button type="button" class="btn btn-outline btn-sm" onclick="downloadGeneratedConfigJs()"><i class="fas fa-download" style="color:#10b981"></i> Download File config.js Terbaru</button>' +
@@ -15713,6 +15864,80 @@
         // ══════════════════════════════════════════════════════════════════
         window._SELECTED_BACKUP_JSON_DATA = null;
 
+        window.saveLastBackupStatus = function (fileName, html, isWarning) {
+            try {
+                localStorage.setItem('portal_last_backup_status', JSON.stringify({
+                    fileName: fileName || '',
+                    html: html || '',
+                    isWarning: Boolean(isWarning),
+                    updatedAt: new Date().toISOString()
+                }));
+            } catch (e) { }
+        };
+
+        window.promptAdminPasswordConfirm = function (title, message, onVerified) {
+            document.getElementById('generalModalTitle').textContent = title || 'Verifikasi Password Admin';
+            document.getElementById('generalModalBox').style.maxWidth = '480px';
+            document.getElementById('generalModalBody').innerHTML =
+                '<div style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);border-radius:10px;padding:12px;margin-bottom:14px;font-size:12.5px;color:var(--text);line-height:1.55">' +
+                '<i class="fas fa-shield-alt" style="color:#f59e0b"></i> ' + message +
+                '</div>' +
+                '<div class="form-group">' +
+                '<label style="font-weight:700"><i class="fas fa-lock"></i> Masukkan Password Admin *</label>' +
+                '<div class="pw-input-wrapper">' +
+                '<input type="password" class="form-control" id="admVerifyPwInput" placeholder="Masukkan password Admin untuk melanjutkan..." autocomplete="current-password" onkeydown="if(event.key===\'Enter\')document.getElementById(\'btnConfirmAdmPw\').click()"/>' +
+                '<button type="button" class="btn-toggle-pw" onclick="togglePasswordVisibility(\'admVerifyPwInput\', this)"><i class="far fa-eye-slash"></i></button>' +
+                '</div>' +
+                '<div id="admVerifyPwErr" style="color:#ef4444;font-size:12px;margin-top:6px;display:none"></div>' +
+                '</div>' +
+                '<div class="settings-actions-row" style="margin-top:14px;justify-content:flex-end">' +
+                '<button type="button" class="btn btn-outline" onclick="closeModal(\'generalModal\')">Batal</button>' +
+                '<button type="button" class="btn btn-primary" id="btnConfirmAdmPw"><i class="fas fa-check-circle"></i> Verifikasi &amp; Terapkan</button>' +
+                '</div>';
+            openModal('generalModal');
+            setTimeout(function () {
+                var inp = document.getElementById('admVerifyPwInput');
+                if (inp) inp.focus();
+            }, 120);
+
+            var btn = document.getElementById('btnConfirmAdmPw');
+            if (btn) {
+                btn.onclick = function () {
+                    var pw = v('admVerifyPwInput');
+                    var errBox = document.getElementById('admVerifyPwErr');
+                    if (!pw) {
+                        if (errBox) { errBox.textContent = 'Password Admin wajib diisi!'; errBox.style.display = 'block'; }
+                        return;
+                    }
+                    btn.disabled = true;
+                    var orig = btn.innerHTML;
+                    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memverifikasi...';
+                    var prefId = (APP.currentUser && (APP.currentUser.id || APP.currentUser.ID)) || '';
+                    google.script.run.withSuccessHandler(function (vRes) {
+                        btn.disabled = false;
+                        btn.innerHTML = orig;
+                        if (vRes && vRes.success) {
+                            closeModal('generalModal');
+                            if (typeof onVerified === 'function') onVerified();
+                        } else {
+                            if (errBox) {
+                                errBox.textContent = (vRes && vRes.message) || 'Password Admin salah!';
+                                errBox.style.display = 'block';
+                            }
+                            showToast((vRes && vRes.message) || 'Password Admin salah!', 'error');
+                        }
+                    }).withFailureHandler(function (e) {
+                        btn.disabled = false;
+                        btn.innerHTML = orig;
+                        if (errBox) {
+                            errBox.textContent = (e && e.message) || 'Gagal memverifikasi password.';
+                            errBox.style.display = 'block';
+                        }
+                    }).verifyAdminPassword(pw, prefId);
+                };
+            }
+        };
+
         window.downloadFullDatabaseBackup = function () {
             var yr = v('bkExportYear') || (APP.settings && APP.settings.academic_year) || '2026/2027';
             var sem = v('bkExportSemester') || (APP.settings && APP.settings.semester) || 'Ganjil';
@@ -15761,12 +15986,14 @@
                 }, 400);
 
                 var sum = res.summary || {};
+                var dlHtml = '<div style="font-weight:700;color:#10b981;margin-bottom:4px"><i class="fas fa-check-circle"></i> File Backup Database Berhasil Diunduh: <code>' + esc(a.download) + '</code></div>' +
+                    '<div style="font-size:11.5px;color:var(--text2)">Rincian Data Tersimpan: <b>' + (sum.Users || 0) + '</b> Guru/Admin &bull; <b>' + (sum.Classes || 0) + '</b> Kelas &bull; <b>' + (sum.Students || 0) + '</b> Siswa &bull; <b>' + (sum.Subjects || 0) + '</b> Mapel/Jadwal &bull; <b>' + (sum.Attendance || 0) + '</b> Absensi &bull; <b>' + (sum.Exams || 0) + '</b> Ujian &bull; <b>' + (sum.Questions || 0) + '</b> Soal &bull; <b>' + (sum.Grades || 0) + '</b> Nilai &bull; <b>' + (sum.ExamSessions || 0) + '</b> Sesi Ujian &bull; <b>' + (sum.Violations || 0) + '</b> Pelanggaran &bull; <b>' + (sum.Learnings || 0) + '</b> Ruang Belajar &bull; <b>' + (sum.Settings || 0) + '</b> Pengaturan.</div>';
                 if (statusBox) {
                     statusBox.style.background = 'rgba(16,185,129,0.12)';
                     statusBox.style.borderColor = 'rgba(16,185,129,0.4)';
-                    statusBox.innerHTML = '<div style="font-weight:700;color:#10b981;margin-bottom:4px"><i class="fas fa-check-circle"></i> File Backup Database Berhasil Diunduh: <code>' + esc(a.download) + '</code></div>' +
-                        '<div style="font-size:11.5px;color:var(--text2)">Rincian Data Tersimpan: <b>' + (sum.Users || 0) + '</b> Guru/Admin &bull; <b>' + (sum.Classes || 0) + '</b> Kelas &bull; <b>' + (sum.Students || 0) + '</b> Siswa &bull; <b>' + (sum.Subjects || 0) + '</b> Mapel/Jadwal &bull; <b>' + (sum.Attendance || 0) + '</b> Absensi &bull; <b>' + (sum.Exams || 0) + '</b> Ujian &bull; <b>' + (sum.Questions || 0) + '</b> Soal &bull; <b>' + (sum.Grades || 0) + '</b> Nilai &bull; <b>' + (sum.ExamSessions || 0) + '</b> Sesi Ujian &bull; <b>' + (sum.Violations || 0) + '</b> Pelanggaran &bull; <b>' + (sum.Learnings || 0) + '</b> Ruang Belajar &bull; <b>' + (sum.Settings || 0) + '</b> Pengaturan.</div>';
+                    statusBox.innerHTML = dlHtml;
                 }
+                window.saveLastBackupStatus(a.download, dlHtml, false);
                 showToast(res.message || 'File .backup database berhasil diunduh!', 'success');
             }).withFailureHandler(function (e) {
                 hideWaiting();
@@ -15861,9 +16088,9 @@
                     ? 'MENGGANTI DATA AKADEMIK & TRANSAKSI SEMESTER (mempertahankan akun Guru/Admin)'
                     : 'MENGGABUNGKAN (MERGE/UPSERT) data file .backup ke database saat ini');
 
-            showConfirmDialog(
-                'Konfirmasi Upload & Terapkan File .BACKUP',
-                'Apakah Anda yakin ingin ' + modeDesc + ' untuk periode ' + (bk.semesterLabel || ('Semester ' + (bk.semester || '') + ' ' + (bk.academicYear || ''))) + '?',
+            window.promptAdminPasswordConfirm(
+                'Verifikasi Admin: Upload & Ganti Data Semester (.BACKUP)',
+                'Anda akan <b>' + modeDesc + '</b> untuk periode <b>' + esc(bk.semesterLabel || ('Semester ' + (bk.semester || '') + ' ' + (bk.academicYear || ''))) + '</b>.<br/>Demi keamanan data, masukkan <b>Password Admin</b> Anda untuk melanjutkan.',
                 function () {
                     var statusBox = document.getElementById('bkOperationStatusBox');
                     if (statusBox) {
@@ -15879,8 +16106,12 @@
                         if (res && res.success) {
                             var sum = res.summary || {};
                             var isRemoteOk = Number(res.remoteSyncedTables || 0) > 0;
+                            var appliedFile = bk.sourceFileName || 'db_cluster.backup';
+                            var appliedAt = new Date().toLocaleString('id-ID');
                             var statusHtml = '<div style="font-weight:700;color:' + (isRemoteOk ? '#10b981' : '#f59e0b') + ';margin-bottom:4px"><i class="fas ' + (isRemoteOk ? 'fa-check-circle' : 'fa-exclamation-triangle') + '"></i> ' + esc(res.message) + '</div>' +
+                                '<div style="font-size:11px;color:var(--text2);margin-bottom:4px">File Aktif: <code>' + esc(appliedFile) + '</code> &bull; Diterapkan pada: <b>' + esc(appliedAt) + '</b></div>' +
                                 '<div style="font-size:11.5px;color:var(--text2)">Data Aktif Saat Ini: <b>' + (sum.Users || 0) + '</b> Guru/Admin &bull; <b>' + (sum.Classes || 0) + '</b> Kelas &bull; <b>' + (sum.Students || 0) + '</b> Siswa &bull; <b>' + (sum.Subjects || 0) + '</b> Mapel/Jadwal &bull; <b>' + (sum.Attendance || 0) + '</b> Absensi &bull; <b>' + (sum.Exams || 0) + '</b> Ujian &bull; <b>' + (sum.Questions || 0) + '</b> Soal &bull; <b>' + (sum.Grades || 0) + '</b> Nilai &bull; <b>' + (sum.Learnings || 0) + '</b> Ruang Belajar.</div>';
+                            window.saveLastBackupStatus(appliedFile, statusHtml, !isRemoteOk);
                             if (statusBox) {
                                 statusBox.style.background = isRemoteOk ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)';
                                 statusBox.style.borderColor = isRemoteOk ? 'rgba(16,185,129,0.4)' : 'rgba(245,158,11,0.4)';
@@ -15895,15 +16126,6 @@
                                     try { loadLandingTeachers(); } catch (e) { }
                                     try { checkPendingUsers(); } catch (e) { }
                                     renderSettings();
-                                    setTimeout(function () {
-                                        var sb2 = document.getElementById('bkOperationStatusBox');
-                                        if (sb2) {
-                                            sb2.style.display = 'block';
-                                            sb2.style.background = isRemoteOk ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)';
-                                            sb2.style.border = '1px solid ' + (isRemoteOk ? 'rgba(16,185,129,0.4)' : 'rgba(245,158,11,0.4)');
-                                            sb2.innerHTML = statusHtml;
-                                        }
-                                    }, 150);
                                 }
                             }).getSettings();
                         } else {
@@ -15948,8 +16170,15 @@
                 '<input type="checkbox" id="nsClearSpmb"/> Kosongkan juga daftar pendaftar SPMB lama' +
                 '</label>' +
                 '</div>' +
-                '<div style="display:flex;gap:10px;margin-top:16px">' +
-                '<button type="button" class="btn btn-primary" onclick="executeNewSemesterReset()"><i class="fas fa-check-circle"></i> Proses Pergantian Semester Baru</button>' +
+                '<div class="form-group" style="margin-top:12px">' +
+                '<label style="font-weight:700"><i class="fas fa-lock" style="color:#f59e0b"></i> Verifikasi Password Admin *</label>' +
+                '<div class="pw-input-wrapper">' +
+                '<input type="password" class="form-control" id="nsAdminPassword" placeholder="Masukkan password Admin untuk peralihan semester..." autocomplete="current-password"/>' +
+                '<button type="button" class="btn-toggle-pw" onclick="togglePasswordVisibility(\'nsAdminPassword\', this)"><i class="far fa-eye-slash"></i></button>' +
+                '</div>' +
+                '</div>' +
+                '<div class="settings-actions-row" style="margin-top:16px">' +
+                '<button type="button" class="btn btn-primary" onclick="executeNewSemesterReset()"><i class="fas fa-check-circle"></i> Verifikasi &amp; Proses Semester Baru</button>' +
                 '<button type="button" class="btn btn-outline" onclick="closeModal(\'generalModal\')">Batal</button>' +
                 '</div>';
             openModal('generalModal');
@@ -15960,6 +16189,13 @@
             var newSem = v('nsSemester') || 'Genap';
             var autoDl = document.getElementById('nsAutoDownloadBackup') ? document.getElementById('nsAutoDownloadBackup').checked : true;
             var clearSpmb = document.getElementById('nsClearSpmb') ? document.getElementById('nsClearSpmb').checked : false;
+            var admPw = v('nsAdminPassword');
+            if (!admPw) {
+                showToast('Masukkan Password Admin untuk konfirmasi peralihan semester!', 'warning');
+                var pwEl = document.getElementById('nsAdminPassword');
+                if (pwEl) pwEl.focus();
+                return;
+            }
 
             function proceedReset() {
                 showWaiting('Memproses Semester Baru...', 'Mengatur ulang transaksi semester & memperbarui Supabase');
@@ -15967,6 +16203,9 @@
                     hideWaiting();
                     closeModal('generalModal');
                     if (res && res.success) {
+                        var resetHtml = '<div style="font-weight:700;color:#10b981"><i class="fas fa-check-circle"></i> ' + esc(res.message) + '</div>' +
+                            '<div style="font-size:11.5px;color:var(--text2);margin-top:4px">Periode Aktif Sekarang: <b>TA ' + esc(newYear) + ' &bull; Semester ' + esc(newSem) + '</b></div>';
+                        window.saveLastBackupStatus('Semester_' + newSem + '_' + newYear.replace(/\//g, '-'), resetHtml, false);
                         showToast(res.message, 'success');
                         if (APP.settings) {
                             APP.settings.academic_year = newYear;
@@ -15987,29 +16226,41 @@
                 });
             }
 
-            if (autoDl) {
-                showWaiting('Mengarsipkan Semester Saat Ini...', 'Mengunduh file .backup sebelum memulai semester baru');
-                google.script.run.withSuccessHandler(function (res) {
-                    if (res && res.success && res.backupContent) {
-                        var blob = new Blob([res.backupContent], { type: 'application/octet-stream' });
-                        var url = URL.createObjectURL(blob);
-                        var a = document.createElement('a');
-                        a.href = url;
-                        a.download = res.filename || 'db_cluster-sebelum-ganti-semester.backup';
-                        document.body.appendChild(a);
-                        a.click();
-                        setTimeout(function () {
-                            document.body.removeChild(a);
-                            URL.revokeObjectURL(url);
-                        }, 400);
-                    }
+            var prefId = (APP.currentUser && (APP.currentUser.id || APP.currentUser.ID)) || '';
+            showWaiting('Memverifikasi Password Admin...', 'Memastikan otoritas Administrator');
+            google.script.run.withSuccessHandler(function (vRes) {
+                if (!vRes || !vRes.success) {
+                    hideWaiting();
+                    showToast((vRes && vRes.message) || 'Password Admin salah!', 'error');
+                    return;
+                }
+                if (autoDl) {
+                    showWaiting('Mengarsipkan Semester Saat Ini...', 'Mengunduh file .backup sebelum memulai semester baru');
+                    google.script.run.withSuccessHandler(function (res) {
+                        if (res && res.success && res.backupContent) {
+                            var blob = new Blob([res.backupContent], { type: 'application/octet-stream' });
+                            var url = URL.createObjectURL(blob);
+                            var a = document.createElement('a');
+                            a.href = url;
+                            a.download = res.filename || 'db_cluster-sebelum-ganti-semester.backup';
+                            document.body.appendChild(a);
+                            a.click();
+                            setTimeout(function () {
+                                document.body.removeChild(a);
+                                URL.revokeObjectURL(url);
+                            }, 400);
+                        }
+                        proceedReset();
+                    }).withFailureHandler(function () {
+                        proceedReset();
+                    }).exportFullDatabaseBackup({ notes: 'Auto-backup sebelum ganti ke Semester ' + newSem + ' ' + newYear });
+                } else {
                     proceedReset();
-                }).withFailureHandler(function () {
-                    proceedReset();
-                }).exportFullDatabaseBackup({ notes: 'Auto-backup sebelum ganti ke Semester ' + newSem + ' ' + newYear });
-            } else {
-                proceedReset();
-            }
+                }
+            }).withFailureHandler(function (e) {
+                hideWaiting();
+                err(e);
+            }).verifyAdminPassword(admPw, prefId);
         };
 
         window.testCloudinaryFromSettings = async function () {
@@ -19539,13 +19790,15 @@
                 if (btn) { btn.innerHTML = oldHtml; btn.disabled = false; }
                 if (res && res.success && res.user) {
                     var userRole = String(res.user.role || 'guru').toLowerCase();
-                    res.user.role = userRole;
+                    res.user.originalRole = res.user.originalRole || userRole;
                     if (_hamLoginRole === 'admin' && userRole !== 'admin') {
                         showToast('Akses ditolak. Akun ini bukan administrator!', 'error');
                         return;
                     }
                     if (_hamLoginRole === 'guru' && userRole === 'admin') {
-                        showToast('Login berhasil sebagai Administrator.', 'info');
+                        res.user.role = 'guru';
+                        userRole = 'guru';
+                        showToast('Masuk ke Mode Guru (Anda dapat kembali ke Mode Admin kapan saja).', 'info');
                     } else {
                         showToast('Login berhasil! Selamat datang, ' + (res.user.namaLengkap || res.user.username), 'success');
                     }

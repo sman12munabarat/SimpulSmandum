@@ -6892,6 +6892,68 @@
       }
     },
 
+    async verifyAdminPassword(password, preferredAdminId) {
+      const cleanPass = String(password || '');
+      if (!cleanPass) {
+        return { success: false, message: 'Password Admin wajib diisi!' };
+      }
+      try {
+        const hashed = await hashPassword(cleanPass);
+        let rawHex = '';
+        try {
+          const rawBuf = new TextEncoder().encode(cleanPass);
+          const rawHashBuf = await crypto.subtle.digest('SHA-256', rawBuf);
+          rawHex = Array.from(new Uint8Array(rawHashBuf)).map(b => b.toString(16).padStart(2, '0')).join('').toLowerCase();
+        } catch (e) { }
+
+        const checkMatch = (u) => {
+          if (!u || typeof u !== 'object') return false;
+          const storedPass = String(u['Password'] ?? u.password ?? '');
+          if (!storedPass) return false;
+          return (
+            storedPass === cleanPass ||
+            storedPass.trim() === cleanPass.trim() ||
+            storedPass === hashed ||
+            (rawHex && storedPass.toLowerCase() === rawHex)
+          );
+        };
+
+        let users = _getTableCache('Users');
+        const sb = getClient();
+        if (sb && !_isQuotaRestricted()) {
+          try {
+            const { data, error } = await sb.from('Users').select('*');
+            if (!error && Array.isArray(data) && data.length > 0) {
+              users = data;
+            }
+          } catch (e) { }
+        }
+
+        const adminUsers = (users || []).filter(u => {
+          const r = String(u['Role'] || u.role || '').trim().toLowerCase();
+          const uname = String(u['Username'] || u.username || '').trim().toUpperCase();
+          return r === 'admin' || r === 'administrator' || uname === 'DZULKIFLI' || uname === 'ADMIN';
+        });
+
+        if (preferredAdminId) {
+          const target = adminUsers.find(u => String(u['ID'] || u.id || '') === String(preferredAdminId));
+          if (target && checkMatch(target)) {
+            return { success: true, verifiedBy: target['Nama Lengkap'] || target['Username'] || 'Admin' };
+          }
+        }
+
+        for (const adm of adminUsers) {
+          if (checkMatch(adm)) {
+            return { success: true, verifiedBy: adm['Nama Lengkap'] || adm['Username'] || 'Admin' };
+          }
+        }
+
+        return { success: false, message: 'Password Admin tidak sesuai! Tindakan ganti data dibatalkan.' };
+      } catch (e) {
+        return { success: false, message: e.message || 'Gagal memverifikasi password Admin.' };
+      }
+    },
+
     async registerGuru(userData) {
       try {
         const sb = getClient();
